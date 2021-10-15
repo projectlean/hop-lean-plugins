@@ -58,14 +58,25 @@ public class AutoDocGuiPlugin {
   public static final String COMPONENT_NAME_WORKFLOWS = "workflows";
   public static final String COMPONENT_NAME_WORKFLOW_COMPOSITE = "workflow-composite";
   public static final String COMPONENT_NAME_WORKFLOW_FILENAME = "workflow-filename";
+  public static final String COMPONENT_NAME_WORKFLOW_DESCRIPTION = "workflow-description";
+  public static final String COMPONENT_NAME_WORKFLOW_CHANGED_DATE = "workflow-changed-date";
   public static final String COMPONENT_NAME_WORKFLOW_IMAGE = "workflow-image";
   public static final String COMPONENT_NAME_WORKFLOWS_GROUP = "workflows-group";
 
   public static final String COMPONENT_NAME_PIPELINES = "pipelines";
   public static final String COMPONENT_NAME_PIPELINE_COMPOSITE = "pipeline-composite";
   public static final String COMPONENT_NAME_PIPELINE_FILENAME = "pipeline-filename";
+  public static final String COMPONENT_NAME_PIPELINE_DESCRIPTION = "workflow-description";
+  public static final String COMPONENT_NAME_PIPELINE_CHANGED_DATE = "workflow-changed-date";
   public static final String COMPONENT_NAME_PIPELINE_IMAGE = "pipeline-image";
   public static final String COMPONENT_NAME_PIPELINES_GROUP = "pipelines-group";
+
+  public static final String VARIABLE_NAME_NAME = "name";
+  public static final String VARIABLE_NAME_DESCRIPTION = "description";
+  public static final String VARIABLE_NAME_CHANGED_DATE = "changed_date";
+
+  public static final int X_MARGIN = 25;
+  public static final int Y_MARGIN = 10;
 
   public AutoDocGuiPlugin() {}
 
@@ -115,23 +126,29 @@ public class AutoDocGuiPlugin {
       }
 
       HopDocumentation hopDoc = serializer.load(metadataName);
-      generateDocumentation( hopGui, variables, metadataProvider, hopDoc );
+      generateDocumentation(hopGui, variables, metadataProvider, hopDoc);
     } catch (Exception e) {
       new ErrorDialog(shell, "Error", "There was an error generating documentation", e);
     }
   }
 
-  public void generateDocumentation( HopGui hopGui, IVariables variables, IHopMetadataProvider metadataProvider, HopDocumentation hopDoc ) throws Exception {
-    FileObject baseFolder = HopVfs.getFileObject( variables.resolve( hopDoc.getSourceFolder()));
-    String targetFolderName = variables.resolve( hopDoc.getTargetFolder() );
-    String baseFilename = variables.resolve( hopDoc.getBaseFilename() );
-    FileObject targetFolder = HopVfs.getFileObject( targetFolderName );
+  public void generateDocumentation(
+      HopGui hopGui,
+      IVariables variables,
+      IHopMetadataProvider metadataProvider,
+      HopDocumentation hopDoc)
+      throws Exception {
+    FileObject baseFolder = HopVfs.getFileObject(variables.resolve(hopDoc.getSourceFolder()));
+    String targetFolderName = variables.resolve(hopDoc.getTargetFolder());
+    String baseFilename = variables.resolve(hopDoc.getBaseFilename());
+    FileObject targetFolder = HopVfs.getFileObject(targetFolderName);
 
     // Some sanity check before we do all the hard work...
     //
     if (!targetFolder.exists()) {
-      if (!hopDoc.isCreateTargetFolder() ) {
-        throw new HopException("Documentation target folder '"+targetFolderName+" doesn't exist");
+      if (!hopDoc.isCreateTargetFolder()) {
+        throw new HopException(
+            "Documentation target folder '" + targetFolderName + " doesn't exist");
       }
     }
 
@@ -159,23 +176,23 @@ public class AutoDocGuiPlugin {
 
     // Add a header and a footer
     //
-    addHeaderFooter(presentation, presentationName, variables );
-    if ( hopDoc.isDocumentWorkflows()) {
+    addHeaderFooter(presentation, presentationName, variables);
+    if (hopDoc.isDocumentWorkflows()) {
       addWorkflows(presentation, variables, metadataProvider, baseFolder);
     }
-    if ( hopDoc.isDocumentPipelines()) {
+    if (hopDoc.isDocumentPipelines()) {
       addPipelines(presentation, variables, metadataProvider, baseFolder);
     }
 
     // TODO: use the page format
     //
-    LeanPage a4 = LeanPage.getA4(1, hopDoc.isPortrait() );
+    LeanPage a4 = LeanPage.getA4(1, hopDoc.isPortrait());
     IRenderContext renderContext =
         new SimpleRenderContext(a4.getWidth(), a4.getHeight(), presentation.getThemes());
     LeanLayoutResults results =
         presentation.doLayout(
             hopGui.getLoggingObject(), renderContext, metadataProvider, new ArrayList<>());
-    presentation.render(results, metadataProvider );
+    presentation.render(results, metadataProvider);
 
     // Convert to a PDF...
     // Target folder(s) get created automatically below
@@ -185,7 +202,8 @@ public class AutoDocGuiPlugin {
     // Save the presentation JSON...
     //
     String json = presentation.toJsonString(true);
-    try (FileOutputStream fos = new FileOutputStream(targetFolderName+"/"+baseFilename+"-presentation.json")) {
+    try (FileOutputStream fos =
+        new FileOutputStream(targetFolderName + "/" + baseFilename + "-presentation.json")) {
       fos.write(json.getBytes(StandardCharsets.UTF_8));
       fos.flush();
     }
@@ -206,6 +224,7 @@ public class AutoDocGuiPlugin {
     //
     LeanLabelComponent headerLabelComponent = new LeanLabelComponent();
     headerLabelComponent.setLabel("Workflows");
+    headerLabelComponent.setUnderline(true);
     headerLabelComponent.setDefaultFont(new LeanFont("Arial", "14", true, true));
     LeanComponent headerLabel = new LeanComponent(COMPONENT_NAME_WORKFLOWS, headerLabelComponent);
     headerLabel.setLayout(LeanLayout.topLeftPage());
@@ -230,36 +249,60 @@ public class AutoDocGuiPlugin {
      * <p>Workflow: - Filename - Description: Image
      */
     LeanCompositeComponent workflowCompositeComponent = new LeanCompositeComponent();
+    LeanComponent workflowComposite =
+        new LeanComponent(COMPONENT_NAME_WORKFLOW_COMPOSITE, workflowCompositeComponent);
+
+    // Add a listener to the composite to set a few extra variables...
+    // - Description, Name, last changed date...
+    //
+    workflowComposite
+        .getProcessSourceDataListeners()
+        .add(new WorkflowProcessSourceDataListener(baseFolder, metadataProvider));
 
     // Filename
     {
-      LeanLabelComponent filenameLabelComponent = new LeanLabelComponent();
-      filenameLabelComponent.setLabel("${" + FIELD_NAME_FILENAME + "}");
-      LeanComponent filenameComponent =
-          new LeanComponent(COMPONENT_NAME_WORKFLOW_FILENAME, filenameLabelComponent);
-      LeanLayout layout = LeanLayout.topLeftPage();
-      layout.getTop().setOffset(15);
-      filenameComponent.setLayout(layout);
-      workflowCompositeComponent.getChildren().add(filenameComponent);
+      LeanLabelComponent labelComponent = new LeanLabelComponent();
+      labelComponent.setLabel("Filename:      ${" + FIELD_NAME_FILENAME + "}");
+      LeanComponent component = new LeanComponent(COMPONENT_NAME_WORKFLOW_FILENAME, labelComponent);
+      component.setLayout(new LeanLayoutBuilder().top(Y_MARGIN).left().build());
+      workflowCompositeComponent.getChildren().add(component);
+    }
+    String lastComponent = COMPONENT_NAME_WORKFLOW_FILENAME;
+
+    // Description
+    {
+      LeanLabelComponent labelComponent = new LeanLabelComponent();
+      labelComponent.setLabel("Description: ${" + VARIABLE_NAME_DESCRIPTION + "}");
+      LeanComponent component =
+          new LeanComponent(COMPONENT_NAME_WORKFLOW_DESCRIPTION, labelComponent);
+      LeanLayout layout = new LeanLayoutBuilder().below(lastComponent, Y_MARGIN).build();
+      component.setLayout(layout);
+      workflowCompositeComponent.getChildren().add(component);
+      lastComponent = component.getName();
+    }
+
+    // Changed date
+    {
+      LeanLabelComponent labelComponent = new LeanLabelComponent();
+      labelComponent.setLabel("Changed:      ${" + VARIABLE_NAME_CHANGED_DATE + "}");
+      LeanComponent component =
+          new LeanComponent(COMPONENT_NAME_WORKFLOW_CHANGED_DATE, labelComponent);
+      LeanLayout layout = new LeanLayoutBuilder().below(lastComponent, Y_MARGIN).build();
+      component.setLayout(layout);
+      workflowCompositeComponent.getChildren().add(component);
+      lastComponent = component.getName();
     }
 
     // The image of the workflow
     {
-      LeanWorkflowComponent workflowImageComponent =
+      LeanWorkflowComponent imageComponent =
           new LeanWorkflowComponent(baseFolder + "/${" + FIELD_NAME_FILENAME + "}");
-      workflowImageComponent.setBorder(true);
-      LeanComponent imageComponent =
-          new LeanComponent(COMPONENT_NAME_WORKFLOW_IMAGE, workflowImageComponent);
-      LeanLayout layout = LeanLayout.under(COMPONENT_NAME_WORKFLOW_FILENAME, false);
-      layout.getTop().setOffset(15);
+      LeanComponent component = new LeanComponent(COMPONENT_NAME_WORKFLOW_IMAGE, imageComponent);
+      LeanLayout layout = new LeanLayoutBuilder().below(lastComponent, Y_MARGIN).right(0, -X_MARGIN).build();
       layout.getLeft().setOffset(25);
-      layout.setRight(new LeanAttachment(null, 0, 25, LeanAttachment.Alignment.RIGHT));
-      imageComponent.setLayout(layout);
-      workflowCompositeComponent.getChildren().add(imageComponent);
+      component.setLayout(layout);
+      workflowCompositeComponent.getChildren().add(component);
     }
-
-    LeanComponent workflowComposite =
-        new LeanComponent(COMPONENT_NAME_WORKFLOW_COMPOSITE, workflowCompositeComponent);
 
     // Add the workflows group which loops over the composites
     //
@@ -274,7 +317,8 @@ public class AutoDocGuiPlugin {
             );
     LeanComponent workflowGroup =
         new LeanComponent(COMPONENT_NAME_WORKFLOWS_GROUP, workflowGroupComponent);
-    workflowGroup.setLayout(LeanLayout.under(COMPONENT_NAME_WORKFLOWS, true));
+    workflowGroup.setLayout(
+        new LeanLayoutBuilder().below(COMPONENT_NAME_WORKFLOWS, Y_MARGIN).right().build());
     page.getComponents().add(workflowGroup);
   }
 
@@ -283,7 +327,7 @@ public class AutoDocGuiPlugin {
     final List<String> filenames = new ArrayList<>();
     workflowFiles.forEach(
         fo -> {
-          filenames.add(fo.toString().replace(baseFolder.toString() + "/", ""));
+          filenames.add(fo.toString().replace( baseFolder + "/", ""));
         });
     return filenames;
   }
@@ -304,6 +348,7 @@ public class AutoDocGuiPlugin {
     {
       LeanLabelComponent headerLabelComponent = new LeanLabelComponent();
       headerLabelComponent.setLabel("Pipelines");
+      headerLabelComponent.setUnderline(true);
       headerLabelComponent.setDefaultFont(new LeanFont("Arial", "14", true, true));
       LeanComponent headerLabel = new LeanComponent(COMPONENT_NAME_PIPELINES, headerLabelComponent);
       headerLabel.setLayout(LeanLayout.topLeftPage());
@@ -330,35 +375,62 @@ public class AutoDocGuiPlugin {
      */
     LeanCompositeComponent pipelineCompositeComponent = new LeanCompositeComponent();
 
+    LeanComponent pipelineComposite =
+        new LeanComponent(COMPONENT_NAME_PIPELINE_COMPOSITE, pipelineCompositeComponent);
+
+    // Add a listener to the composite to set a few extra variables...
+    // - Description, Name, last changed date...
+    //
+    pipelineComposite
+        .getProcessSourceDataListeners()
+        .add(new PipelineProcessSourceDataListener(baseFolder, metadataProvider));
+
     // Filename
     {
-      LeanLabelComponent filenameLabelComponent = new LeanLabelComponent();
-      filenameLabelComponent.setLabel("${" + FIELD_NAME_FILENAME + "}");
-      LeanComponent filenameComponent =
-          new LeanComponent(COMPONENT_NAME_PIPELINE_FILENAME, filenameLabelComponent);
-      LeanLayout layout = LeanLayout.topLeftPage();
-      layout.getTop().setOffset(20);
-      filenameComponent.setLayout(layout);
-      pipelineCompositeComponent.getChildren().add(filenameComponent);
+      LeanLabelComponent labelComponent = new LeanLabelComponent();
+      labelComponent.setLabel("Filename:      ${" + FIELD_NAME_FILENAME + "}");
+      LeanComponent component = new LeanComponent(COMPONENT_NAME_PIPELINE_FILENAME, labelComponent);
+      component.setLayout(new LeanLayoutBuilder().top(Y_MARGIN).left().build());
+      pipelineCompositeComponent.getChildren().add(component);
+    }
+    String lastComponent = COMPONENT_NAME_PIPELINE_FILENAME;
+
+    // Description
+    {
+      LeanLabelComponent labelComponent = new LeanLabelComponent();
+      labelComponent.setLabel("Description: ${" + VARIABLE_NAME_DESCRIPTION + "}");
+      LeanComponent component =
+          new LeanComponent(COMPONENT_NAME_PIPELINE_DESCRIPTION, labelComponent);
+      LeanLayout layout = new LeanLayoutBuilder().below(lastComponent, Y_MARGIN).build();
+      component.setLayout(layout);
+      pipelineCompositeComponent.getChildren().add(component);
+      lastComponent = component.getName();
+    }
+
+    // Changed date
+    {
+      LeanLabelComponent labelComponent = new LeanLabelComponent();
+      labelComponent.setLabel("Changed:      ${" + VARIABLE_NAME_CHANGED_DATE + "}");
+      LeanComponent component =
+          new LeanComponent(COMPONENT_NAME_PIPELINE_CHANGED_DATE, labelComponent);
+      LeanLayout layout = new LeanLayoutBuilder().below(lastComponent, Y_MARGIN).build();
+      component.setLayout(layout);
+      pipelineCompositeComponent.getChildren().add(component);
+      lastComponent = component.getName();
     }
 
     // The image of the pipeline
     {
-      LeanPipelineComponent pipelineImageComponent =
+      LeanPipelineComponent imageComponent =
           new LeanPipelineComponent(baseFolder + "/${" + FIELD_NAME_FILENAME + "}");
-      pipelineImageComponent.setBorder(true);
-      LeanComponent imageComponent =
-          new LeanComponent(COMPONENT_NAME_PIPELINE_IMAGE, pipelineImageComponent);
-      LeanLayout layout = LeanLayout.under(COMPONENT_NAME_PIPELINE_FILENAME, false);
+      LeanComponent component = new LeanComponent(COMPONENT_NAME_PIPELINE_IMAGE, imageComponent);
+      LeanLayout layout = LeanLayout.under(lastComponent, false);
       layout.getTop().setOffset(15);
       layout.getLeft().setOffset(25);
-      layout.setRight(new LeanAttachment(null, 0, 25, LeanAttachment.Alignment.RIGHT));
-      imageComponent.setLayout(layout);
-      pipelineCompositeComponent.getChildren().add(imageComponent);
+      layout.setRight(new LeanAttachment(null, 0, -X_MARGIN, LeanAttachment.Alignment.RIGHT));
+      component.setLayout(layout);
+      pipelineCompositeComponent.getChildren().add(component);
     }
-
-    LeanComponent pipelineComposite =
-        new LeanComponent(COMPONENT_NAME_PIPELINE_COMPOSITE, pipelineCompositeComponent);
 
     // Add the pipelines group which loops over the composites
     //
@@ -373,14 +445,15 @@ public class AutoDocGuiPlugin {
             );
     LeanComponent pipelineGroup =
         new LeanComponent(COMPONENT_NAME_PIPELINES_GROUP, pipelineGroupComponent);
-    pipelineGroup.setLayout(LeanLayout.topLeftPage());
+    pipelineGroup.setLayout(
+        new LeanLayoutBuilder().below(COMPONENT_NAME_PIPELINES, Y_MARGIN).right().build());
     page.getComponents().add(pipelineGroup);
   }
 
   private void addHeaderFooter(
       LeanPresentation presentation, String headerTitle, IVariables variables) {
     // Header
-    LeanPage headerPage = LeanPage.getHeaderFooter(true, true, 50);
+    LeanPage headerPage = LeanPage.getHeaderFooter(true, true, 25);
     headerPage.getComponents().add(createHeaderLabelComponent(headerTitle));
     presentation.setHeader(headerPage);
     // Footer
@@ -392,9 +465,9 @@ public class AutoDocGuiPlugin {
   }
 
   protected static LeanComponent createFooterImageComponent() {
-    LeanSvgComponent leanSvg = new LeanSvgComponent("ui/images/logo_icon.svg", ScaleType.MIN);
+    LeanSvgComponent leanSvg = new LeanSvgComponent("hop-logo.svg", ScaleType.MIN);
     LeanComponent imageComponent = new LeanComponent("header-hop-logo", leanSvg);
-    imageComponent.setLayout(new LeanLayoutBuilder().left(50, 0).top().bottom().build());
+    imageComponent.setLayout(new LeanLayoutBuilder().left(50,-10).top().bottom().build());
 
     return imageComponent;
   }
@@ -402,36 +475,24 @@ public class AutoDocGuiPlugin {
   protected static LeanComponent createHeaderLabelComponent(String headerMessage) {
     LeanLabelComponent label = new LeanLabelComponent();
     label.setLabel(headerMessage);
-    label.setBorder(false);
     LeanComponent labelComponent = new LeanComponent("header-message-label", label);
-    LeanLayout labelLayout = new LeanLayout();
-    labelLayout.setLeft(new LeanAttachment(null, 0, 0, LeanAttachment.Alignment.CENTER));
-    labelLayout.setTop(new LeanAttachment(null, 0, 0, LeanAttachment.Alignment.CENTER));
-    labelComponent.setLayout(labelLayout);
+    labelComponent.setLayout(new LeanLayoutBuilder().leftCenter().top().build());
     return labelComponent;
   }
 
   protected static LeanComponent createPageNumberLabelComponent() {
     LeanLabelComponent label = new LeanLabelComponent();
     label.setLabel("Page #${PAGE_NUMBER}");
-    label.setBorder(false);
     LeanComponent labelComponent = new LeanComponent("footer-page-number-label", label);
-    LeanLayout labelLayout = new LeanLayout();
-    labelLayout.setTop(new LeanAttachment(null, 0, 0, LeanAttachment.Alignment.TOP));
-    labelLayout.setLeft(new LeanAttachment(null, 0, 0, LeanAttachment.Alignment.LEFT));
-    labelComponent.setLayout(labelLayout);
+    labelComponent.setLayout(new LeanLayoutBuilder().left().bottom().build());
     return labelComponent;
   }
 
   protected static LeanComponent createSysdateLabelComponent() {
     LeanLabelComponent label = new LeanLabelComponent();
     label.setLabel("${SYSTEM_DATE}");
-    label.setBorder(false);
     LeanComponent labelComponent = new LeanComponent("footer-system-date-label", label);
-    LeanLayout labelLayout = new LeanLayout();
-    labelLayout.setTop(new LeanAttachment(null, 0, 0, LeanAttachment.Alignment.TOP));
-    labelLayout.setRight(new LeanAttachment(null, 0, 0, LeanAttachment.Alignment.RIGHT));
-    labelComponent.setLayout(labelLayout);
+    labelComponent.setLayout(new LeanLayoutBuilder().right().bottom().build());
     return labelComponent;
   }
 }
