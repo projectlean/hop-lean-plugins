@@ -45,7 +45,7 @@ public class PipelineProcessSourceDataListener implements IProcessSourceDataList
     try {
       // Load the pipeline metadata
       //
-      PipelineMeta pipelineMeta = new PipelineMeta(filename, metadataProvider, true, vars);
+      PipelineMeta pipelineMeta = new PipelineMeta(filename, metadataProvider, vars);
       pipelineMeta.setInternalHopVariables(vars);
 
       Date changedDate =
